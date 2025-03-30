@@ -3,7 +3,7 @@ package p2p
 import(
 	"fmt"
 	"net"
-	"sync"
+	
 )
 
 type TCPPeer struct{
@@ -18,25 +18,36 @@ func NewTCPPeer(conn net.Conn , outbound bool) *TCPPeer{
 	}
 }
 
-type TCPTransportOPS struct{
-	ListenerAddr string
-	HandshakeFunc HandshakeFunc
-	Decoder Decoder
+type TCPTransportOPS struct {
+    ListenerAddr  string
+    HandshakeFunc HandshakeFunc
+    Decoder       Decoder
+    OnPeer        func(Peer) error
 }
+
 type TCPTransport struct{
 	TCPTransportOPS
 	listenAddress string
 	listener net.Listener
 	shakeHands HandshakeFunc
+	rpcch chan RPC
 	decoder Decoder
-
-	mu sync.RWMutex
-	peers map[net.Addr]Peer
 }
 
+//Consume implements the Transport interface which will reaturn only read-only channel 
+//For reading incoming messages coming from other peer in network
+func (t *TCPTransport) Consume() <- chan RPC{
+	return t.rpcch
+} 
+
+//Close implements the peer interface
+func (p *TCPPeer) Close() error{
+	return p.conn.Close()
+}
 func NewTCPTransport(ops TCPTransportOPS) *TCPTransport{
 	return &TCPTransport{
 		TCPTransportOPS: ops,
+		rpcch: make(chan RPC),
 	}
 }
 
@@ -61,22 +72,28 @@ func (t *TCPTransport) startAcceptLoop(){
 	}
 }
 
-func(t *TCPTransport)handleConn(conn net.Conn){
-	peer := NewTCPPeer(conn , true)
-	if err := t.HandshakeFunc(peer) ; err != nil{
+func(t *TCPTransport) handleConn(conn net.Conn){
+	var err error
+
+	defer func(){
+		fmt.Printf("drooping peer connection: %s",err)
 		conn.Close()
-		fmt.Printf("TCP Handshake Error: %s\n" , err)
+	}()
+
+	peer := NewTCPPeer(conn , true)
+
+	if err := t.HandshakeFunc(peer) ; err != nil{
 		return 
 
 	}
-	
+	rpc := RPC{}
 	for{
-		msg := &Message{}
-		if err := t.Decoder.Decode(conn , msg); err != nil{
+		if err := t.Decoder.Decode(conn , &rpc ); err != nil{
 			fmt.Printf("TCP error %s\n" , err)
 			continue
 		}
-		fmt.Printf("Received from %s: %s\n", msg.From, string(msg.Payload))
+		rpc.From = conn.RemoteAddr()
+		t.rpcch <- rpc
 	}
 	
 	
