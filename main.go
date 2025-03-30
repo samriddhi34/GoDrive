@@ -6,11 +6,17 @@ import (
 	"github.com/samriddhi34/GoDrive/p2p"
 )
 
+func OnPeer(peer p2p.Peer)error{
+	peer.Close()
+	return nil
+}
+
 func main(){
 	tcpOps := p2p.TCPTransportOPS{
 		ListenerAddr: ":3000",
 		HandshakeFunc: p2p.NOPHandShakeFunc,
 		Decoder: p2p.DefaultDecoder{},
+		OnPeer: OnPeer,
 
 	}
 	tr := p2p.NewTCPTransport(tcpOps)
@@ -25,6 +31,7 @@ func main(){
 	if err := tr.ListenAndAccept() ; err != nil{
 		log.Fatal(err)
 	}
+	select {}
 
 	
 }
